@@ -1,0 +1,16 @@
+<?xml version='1.0'?>
+<configuration xmlns="urn:activemq"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns:xi="http://www.w3.org/2001/XInclude"
+               xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
+  <core xmlns="urn:activemq:core" 
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="urn:activemq:core">
+    <name>broker</name>
+    <persistence-enabled>false</persistence-enabled>
+    <security-enabled>false</security-enabled>
+    <acceptors>
+      <acceptor name="in-vm">vm://0</acceptor>
+    </acceptors>
+  </core>
+</configuration>
