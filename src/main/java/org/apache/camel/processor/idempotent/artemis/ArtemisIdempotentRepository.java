@@ -38,7 +38,7 @@ public class ArtemisIdempotentRepository extends ServiceSupport implements Idemp
   private String username;
   private String password;
 
-  private String _selfUuid;
+  private final String _selfUuid = UUID.randomUUID().toString();;
   private final Map<String, Object> _cache;
 
   private ClientSessionFactory _factory;
@@ -60,6 +60,8 @@ public class ArtemisIdempotentRepository extends ServiceSupport implements Idemp
     this.serverLocator = serverLocator;
     this.maxCacheSize = maxCacheSize;
     this._cache = LRUCacheFactory.newLRUCache(maxCacheSize);
+    
+    log.debug(String.format("Created %s instance: [%s]", this.getClass().getSimpleName(), this._selfUuid));
   }
 
   public String getRepoId() {
@@ -98,11 +100,8 @@ public class ArtemisIdempotentRepository extends ServiceSupport implements Idemp
 
   @Override
   protected void doStart() throws Exception {
-    _selfUuid = UUID.randomUUID().toString();
-    log.debug(String.format("Generated instance _selfUuid: [%s].", _selfUuid));
-
     _factory = serverLocator.createSessionFactory();
-    _session = _factory.createSession();
+    _session = _factory.createSession(username, password, false, true, true, serverLocator.isPreAcknowledge(), serverLocator.getAckBatchSize());
 
     QueueQuery queueQuery = _session.queueQuery(new SimpleString(repoId));
     if (!queueQuery.isExists()) {
@@ -149,15 +148,21 @@ public class ArtemisIdempotentRepository extends ServiceSupport implements Idemp
         return;
       }
       MessageType type = MessageType.values()[messageTypeOrdinal];
+      String body = null;
       switch (type) {
         case ADD:
-         _cache.put(message.getBodyBuffer().readString(), EMPTY_CACHE_VALUE);
+          body = message.getBodyBuffer().readString();
+          log.debug(String.format("Processing %s message: [%s].", type, body));
+          _cache.put(body, EMPTY_CACHE_VALUE);
           break;
         case CLEAR:
+          log.debug(String.format("Processing %s message.", type));
           _cache.clear();
           break;
         case REMOVE:
-          _cache.remove(message.getBodyBuffer().readString());
+          body = message.getBodyBuffer().readString();
+          log.debug(String.format("Processing %s message: [%s].", type, body));
+          _cache.remove(body);
           break;
         default:
           log.debug(String.format("Unknown message type: [%s].", type));

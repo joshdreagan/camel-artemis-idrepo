@@ -31,6 +31,8 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
   private ArtemisIdempotentRepository idempotentRepository;
   private ArtemisIdempotentRepository idempotentRepository2;
   
+  private ServerLocator serverLocator;
+          
   @Override
   protected void doPreSetup() throws Exception {
     super.doPreSetup();
@@ -39,9 +41,9 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
     log.info("Starting the Artemis server...");
     broker.start();
     
-    ServerLocator serverLocator = ActiveMQClient.createServerLocator(BROKER_URL);
-    idempotentRepository = new ArtemisIdempotentRepository(ID_REPO_NAME, serverLocator);
+    serverLocator = ActiveMQClient.createServerLocator(BROKER_URL);
     
+    idempotentRepository = new ArtemisIdempotentRepository(ID_REPO_NAME, serverLocator);
     idempotentRepository2 = new ArtemisIdempotentRepository(ID_REPO_NAME, serverLocator);
   }
 
@@ -58,10 +60,16 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
     return new RouteBuilder() {
       @Override
       public void configure() throws Exception {
+        errorHandler(deadLetterChannel("direct:printExceptionMessage"));
+        
+        from("direct:printExceptionMessage")
+          .transform(simple("${exception.message}"))
+          .log(LoggingLevel.ERROR, log, "${body}")
+        ;
         
         from("direct:invoke")
           .idempotentConsumer(header(ID_HEADER), idempotentRepository)
-            .log(LoggingLevel.INFO, log, String.format("Processing message: route=[%s], key=[${headers.%s}]", "direct:invoke", ID_HEADER))
+            .log(LoggingLevel.INFO, log, String.format("Routing message: route=[%s], key=[${headers.%s}]", "direct:invoke", ID_HEADER))
             .filter(header(FAILURE_HEADER))
               .throwException(RuntimeCamelException.class, String.format("The [%s] header is set to [true].", FAILURE_HEADER))
             .end()
@@ -71,7 +79,10 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
         
         from("direct:invoke2")
           .idempotentConsumer(header(ID_HEADER), idempotentRepository2)
-            .log(LoggingLevel.INFO, log, String.format("Processing message: route=[%s], key=[${headers.%s}]", "direct:invoke2", ID_HEADER))
+            .log(LoggingLevel.INFO, log, String.format("Routing message: route=[%s], key=[${headers.%s}]", "direct:invoke2", ID_HEADER))
+            .filter(header(FAILURE_HEADER))
+              .throwException(RuntimeCamelException.class, String.format("The [%s] header is set to [true].", FAILURE_HEADER))
+            .end()
             .to("mock:accepted2")
           .end()
         ;
@@ -80,7 +91,7 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
   }
   
   @Test
-  public void testNoDuplicates() throws Exception {
+  public void testSameRoute() throws Exception {
     MockEndpoint mock = getMockEndpoint("mock:accepted");
     mock.expectedMessageCount(1);
     
@@ -95,7 +106,7 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
   }
   
   @Test
-  public void testNoDuplicatesDifferentRoute() throws Exception {
+  public void testDifferentRoute() throws Exception {
     MockEndpoint mock = getMockEndpoint("mock:accepted");
     mock.expectedMessageCount(1);
 
@@ -115,7 +126,7 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
   }
   
   @Test
-  public void testFailureNoDuplicates() throws Exception {
+  public void testFailureSameRoute() throws Exception {
     MockEndpoint mock = getMockEndpoint("mock:accepted");
     mock.expectedMessageCount(1);
     
@@ -134,7 +145,7 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
   }
   
   @Test
-  public void testFailureNoDuplicatesDifferentRoutes() throws Exception {
+  public void testFailureDifferentRoutes() throws Exception {
     MockEndpoint mock = getMockEndpoint("mock:accepted");
     mock.expectedMessageCount(0);
 
@@ -143,7 +154,6 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
     
     String message = "foo";
     String uniqueId = Thread.currentThread().getStackTrace()[1].getMethodName();
-    System.out.println("######################" + uniqueId);
     Map<String, Object> headers = new HashMap<>();
     headers.put(ID_HEADER, uniqueId);
     headers.put(FAILURE_HEADER, true);
@@ -155,6 +165,42 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
     headers.put(FAILURE_HEADER, false);
     template.sendBodyAndHeaders("direct:invoke2", message, headers);
     
-    MockEndpoint.assertIsSatisfied(mock);
+    MockEndpoint.assertIsSatisfied(mock, mock2);
+  }
+  
+  @Test
+  public void testWarmup() throws Exception {
+    MockEndpoint mock = getMockEndpoint("mock:accepted");
+    mock.expectedMessageCount(1);
+    
+    String message = "foo";
+    String uniqueId = Thread.currentThread().getStackTrace()[1].getMethodName();
+    Map<String, Object> headers = new HashMap<>();
+    headers.put(ID_HEADER, uniqueId);
+    headers.put(FAILURE_HEADER, true);
+    try {
+      template.sendBodyAndHeaders("direct:invoke", message, headers);
+    } catch (CamelExecutionException e) {}
+    headers.put(FAILURE_HEADER, false);
+    template.sendBodyAndHeaders("direct:invoke", message, headers);
+    
+    log.info("Waiting for 1 second so the idempotent repository can process/sync messages...");
+    Awaitility.waitAtMost(1, TimeUnit.SECONDS).await();
+
+    ArtemisIdempotentRepository idrepo = new ArtemisIdempotentRepository(ID_REPO_NAME, serverLocator);
+    context.addRoutes(new RouteBuilder() {
+      @Override
+      public void configure() throws Exception {
+        from("direct:warmup")
+          .idempotentConsumer(header(ID_HEADER), idrepo)
+            .to("mock:warmupAccepted")
+          .end()
+        ;
+      }
+    });
+    MockEndpoint warmupMock = getMockEndpoint("mock:warmupAccepted");
+    warmupMock.expectedMessageCount(0);
+
+    MockEndpoint.assertIsSatisfied(mock, warmupMock);
   }
 }
