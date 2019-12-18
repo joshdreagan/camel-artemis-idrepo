@@ -201,6 +201,9 @@ public class ArtemisIdempotentRepositoryTest extends CamelTestSupport {
     MockEndpoint warmupMock = getMockEndpoint("mock:warmupAccepted");
     warmupMock.expectedMessageCount(0);
 
+    headers.put(FAILURE_HEADER, false);
+    template.sendBodyAndHeaders("direct:warmup", message, headers);
+    
     MockEndpoint.assertIsSatisfied(mock, warmupMock);
   }
 }
