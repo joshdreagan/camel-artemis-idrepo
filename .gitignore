@@ -276,3 +276,8 @@ typings/
 
 
 # End of https://www.gitignore.io/api/node
+
+.private/
+.vscode
+kafka-connect-s2i
+debezium-connector-*.tar.gz

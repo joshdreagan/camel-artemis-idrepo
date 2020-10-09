@@ -50,7 +50,9 @@ public class ArtemisIdempotentRepository extends ServiceSupport implements Idemp
   }
 
   public ArtemisIdempotentRepository(String repoId, ServerLocator serverLocator, int maxCacheSize) {
-    Objects.requireNonNull(repoId, "The 'repoId' parameter must not be null.");
+    if (Objects.requireNonNull(repoId, "The 'repoId' parameter must not be null.").trim().isEmpty()) {
+      throw new IllegalArgumentException("The 'repoId' parameter must not be empty.");
+    }
     Objects.requireNonNull(serverLocator, "The 'serverLocator' parameter must not be null.");
     if (maxCacheSize <= 0) {
       throw new IllegalArgumentException("The 'maxCacheSize' parameter must be greater than 0.");
