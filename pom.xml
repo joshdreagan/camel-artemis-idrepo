@@ -19,7 +19,7 @@
     <maven-surefire-plugin.version>2.22.2</maven-surefire-plugin.version>
     
     <camel.version>2.24.2</camel.version>
-    <artemis.version>2.10.1</artemis.version>
+    <artemis.version>2.24.0</artemis.version>
     <slf4j.version>1.7.29</slf4j.version>
     <awaitility.version>4.0.1</awaitility.version>
   </properties>
